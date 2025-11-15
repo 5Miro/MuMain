@@ -77,6 +77,7 @@ float	g_fMULogoAlpha = 0;
 extern float g_fSpecialHeight;
 
 short   g_shCameraLevel = 0;
+bool    g_bUserControlledZoom = false;  // Flag to track if user manually zoomed
 
 int g_iLengthAuthorityCode = 20;
 
@@ -347,19 +348,31 @@ void SetEffectVolumeLevel(int level)
 
 void SetViewPortLevel(int Wheel)
 {
-    if ((HIBYTE(GetAsyncKeyState(VK_CONTROL)) == 128))
+    bool ctrlPressed = (HIBYTE(GetAsyncKeyState(VK_CONTROL)) == 128);
+    
+    if (ctrlPressed)
     {
-        if (Wheel > 0)
-            g_shCameraLevel--;
-        else if (Wheel < 0)
-            g_shCameraLevel++;
-
-        MouseWheel = 0;
-
+        // Clamp first to prevent invalid values
         if (g_shCameraLevel > 4)
             g_shCameraLevel = 4;
         if (g_shCameraLevel < 0)
             g_shCameraLevel = 0;
+        
+        if (Wheel > 0)
+        {
+            g_shCameraLevel--;
+            if (g_shCameraLevel < 0)
+                g_shCameraLevel = 0;
+        }
+        else if (Wheel < 0)
+        {
+            g_shCameraLevel++;
+            if (g_shCameraLevel > 4)
+                g_shCameraLevel = 4;
+        }
+
+        MouseWheel = 0;
+        g_bUserControlledZoom = true;  // Mark that user has manually controlled zoom
     }
 }
 
@@ -1425,17 +1438,32 @@ bool MoveMainCamera()
         if (g_Direction.IsDirection() && !g_Direction.m_bDownHero)
         {
             Hero->Object.Position[2] = 300.0f;
-            g_shCameraLevel = g_Direction.GetCameraPosition(Position);
+            // Only reset camera level if user hasn't manually controlled zoom
+            if (!g_bUserControlledZoom)
+            {
+                g_shCameraLevel = g_Direction.GetCameraPosition(Position);
+            }
         }
         else if (gMapManager.IsPKField() || IsDoppelGanger2())
         {
-            g_shCameraLevel = 5;
+            // Only reset camera level if user hasn't manually controlled zoom
+            if (!g_bUserControlledZoom)
+            {
+                g_shCameraLevel = 5;
+            }
         }
         else if (IsDoppelGanger1())
         {
-            g_shCameraLevel = 5;
+            // Only reset camera level if user hasn't manually controlled zoom
+            if (!g_bUserControlledZoom)
+            {
+                g_shCameraLevel = 5;
+            }
         }
-        else g_shCameraLevel = 0;
+        else if (!g_bUserControlledZoom)
+        {
+            g_shCameraLevel = 0;
+        }
 
         if (CCameraMove::GetInstancePtr()->IsTourMode())
         {
@@ -1973,6 +2001,12 @@ void UpdateSceneState()
     g_pNewKeyInput->ScanAsyncKeyState();
 
     g_dwMouseUseUIID = 0;
+
+    // Handle camera zoom with Ctrl + Mouse Wheel
+    if (SceneFlag == MAIN_SCENE && MouseWheel != 0)
+    {
+        SetViewPortLevel(MouseWheel);
+    }
 
     switch (SceneFlag)
     {
