@@ -239,6 +239,9 @@ bool CSkillManager::AreSkillRequirementsFulfilled(ActionSkillType skillType)
     heroCharacterInfo.SkillEnergy = CharacterMachine->Character.Energy + CharacterMachine->Character.AddEnergy;
     heroCharacterInfo.SkillCharisma = CharacterMachine->Character.Charisma + CharacterMachine->Character.AddCharisma;
 
+    // Skip level requirement check - set to 0 so it always passes
+    skillRequirements.SkillLevel = 0;
+
     auto result = skillRequirements <= heroCharacterInfo;
 
     return result;
