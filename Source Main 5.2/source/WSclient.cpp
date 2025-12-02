@@ -6554,6 +6554,7 @@ void ReceiveStatsExtended(const BYTE* ReceiveBuffer)
         CharacterAttribute->SkillMana = Data->BP;
         CharacterAttribute->AttackSpeed = Data->AttackSpeed;
         CharacterAttribute->MagicSpeed = Data->MagicSpeed;
+        CharacterAttribute->SkillMultiplier = Data->SkillMultiplier;
         break;
     case 0xfe:
         CharacterAttribute->LifeMax = Data->Life;

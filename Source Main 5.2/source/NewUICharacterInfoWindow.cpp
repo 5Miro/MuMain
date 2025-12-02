@@ -1490,20 +1490,13 @@ void SEASON3B::CNewUICharacterInfoWindow::RenderAttribute()
     }
 
     iY += 13;
-    if (iBaseClass == CLASS_KNIGHT)
+
+    if (iBaseClass == CLASS_KNIGHT || iBaseClass == CLASS_DARK || iBaseClass == CLASS_DARK_LORD)
     {
-        swprintf(strEnergy, GlobalText[582], 200 + (wEnergy / 10));
-        g_pRenderText->RenderText(m_Pos.x + 20, m_Pos.y + iY, strEnergy);
-    }
-    if (iBaseClass == CLASS_DARK)
-    {
-        swprintf(strEnergy, GlobalText[582], 200);
-        g_pRenderText->RenderText(m_Pos.x + 20, m_Pos.y + iY, strEnergy);
-    }
-    if (iBaseClass == CLASS_DARK_LORD)
-    {
-        swprintf(strEnergy, GlobalText[582], 200 + (wEnergy / 20));
-        g_pRenderText->RenderText(m_Pos.x + 20, m_Pos.y + iY, strEnergy);
+        // Server sends SkillMultiplier as percentage (e.g., 5.0 = 500, 4.15 = 415)
+        // Display directly as percentage
+        swprintf(strEnergy, L"Skill Damage Multiplier: %d%%", CharacterAttribute->SkillMultiplier);
+        g_pRenderText->RenderText(m_Pos.x + 18, m_Pos.y + iY, strEnergy);
     }
 
     if (iBaseClass == CLASS_RAGEFIGHTER)
