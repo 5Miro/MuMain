@@ -503,6 +503,7 @@ typedef struct
     WORD AttackDamageMinLeft;
     WORD AttackDamageMaxLeft;
     WORD MagicSpeed;
+    WORD SkillMultiplier; // Skill damage multiplier as percentage (e.g., 5.0 = 500, 4.15 = 415). Value is multiplied by 100.
     WORD MagicDamageMin;
     WORD MagicDamageMax;
     WORD CurseDamageMin;
