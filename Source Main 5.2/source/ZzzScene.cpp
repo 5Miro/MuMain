@@ -48,6 +48,7 @@
 #include "w_CursedTemple.h"
 #include "CameraMove.h"
 #include "w_MapHeaders.h"
+#include "MUHelper/MuHelper.h"
 #include "w_PetProcess.h"
 #include "PortalMgr.h"
 #include "ServerListManager.h"
@@ -2024,6 +2025,21 @@ void UpdateSceneState()
     }
 
     MoveNotices();
+
+    // Handle MU Helper toggle with mouse button 3 (mouse wheel button)
+    // Use MouseMButtonPop (button release) for more reliable detection
+    if (SceneFlag == MAIN_SCENE && MouseMButtonPop)
+    {
+        extern bool MouseOnWindow;
+        // Always consume the button pop to prevent it from getting stuck
+        MouseMButtonPop = false;
+        
+        // Only toggle if conditions are met
+        if (!MouseOnWindow && g_pNewUISystem && !g_pNewUISystem->CheckMouseUse())
+        {
+            MUHelper::g_MuHelper.Toggle();
+        }
+    }
 
     if (PressKey(VK_SNAPSHOT))
     {
