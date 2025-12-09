@@ -196,6 +196,12 @@ namespace MUHelper
             return;
         }
 
+        // Don't add party members as targets
+        if (g_pPartyManager->IsPartyMemberChar(pTarget))
+        {
+            return;
+        }
+
         int iDistance = ComputeDistanceFromTarget(pTarget);
 
         if ((iDistance <= m_iHuntingDistance)
@@ -259,7 +265,7 @@ namespace MUHelper
         int iPrevDistance = ComputeDistanceBetween(posA, posB);
 
         posA = { Hero->PositionX, Hero->PositionY };
-        posB = { pTarget->TargetX, pTarget->TargetX };
+        posB = { pTarget->TargetX, pTarget->TargetY };
         int iNextDistance = ComputeDistanceBetween(posA, posB);
 
         return min(iPrevDistance, iNextDistance);
@@ -288,7 +294,17 @@ namespace MUHelper
         for (const int& iMonsterId : setTargets)
         {
             int iIndex = FindCharacterIndex(iMonsterId);
+            if (iIndex == MAX_CHARACTERS_CLIENT)
+            {
+                continue;
+            }
             CHARACTER* pTarget = &CharactersClient[iIndex];
+
+            // Skip party members
+            if (g_pPartyManager->IsPartyMemberChar(pTarget))
+            {
+                continue;
+            }
 
             int iDistance = ComputeDistanceFromTarget(pTarget);
             if (iDistance < iMinDistance)
@@ -316,7 +332,17 @@ namespace MUHelper
         for (const int& iMonsterId : setTargets)
         {
             int iIndex = FindCharacterIndex(iMonsterId);
+            if (iIndex == MAX_CHARACTERS_CLIENT)
+            {
+                continue;
+            }
             CHARACTER* pTarget = &CharactersClient[iIndex];
+
+            // Skip party members
+            if (g_pPartyManager->IsPartyMemberChar(pTarget))
+            {
+                continue;
+            }
 
             int iDistance = ComputeDistanceFromTarget(pTarget);
             if (iDistance > iMaxDistance)
@@ -344,10 +370,18 @@ namespace MUHelper
             if (iIndex == MAX_CHARACTERS_CLIENT)
             {
                 DeleteTarget(iMonsterId);
+                continue;
             }
 
             CHARACTER* pTarget = &CharactersClient[iIndex];
             if (!pTarget || (pTarget && (pTarget->Dead > 0 || !pTarget->Object.Live)))
+            {
+                DeleteTarget(iMonsterId);
+                continue;
+            }
+
+            // Remove party members from target list
+            if (g_pPartyManager->IsPartyMemberChar(pTarget))
             {
                 DeleteTarget(iMonsterId);
             }
@@ -383,6 +417,66 @@ namespace MUHelper
         return 1;
     }
 
+    bool CMuHelper::NeedsBuff(CHARACTER* pTargetChar, ActionSkillType iBuffSkill)
+    {
+        // Check if character needs this specific buff
+        if ((iBuffSkill == AT_SKILL_ATTACK || iBuffSkill == AT_SKILL_ATTACK_STR)
+            && !g_isCharacterBuff((&pTargetChar->Object), eBuff_Attack))
+        {
+            return true;
+        }
+
+        if ((iBuffSkill == AT_SKILL_DEFENSE || iBuffSkill == AT_SKILL_DEFENSE_STR || iBuffSkill == AT_SKILL_DEFENSE_MASTERY)
+            && !g_isCharacterBuff((&pTargetChar->Object), eBuff_Defense))
+        {
+            return true;
+        }
+
+        if ((iBuffSkill == AT_SKILL_INFINITY_ARROW || iBuffSkill == AT_SKILL_INFINITY_ARROW_STR)
+            && !g_isCharacterBuff((&pTargetChar->Object), eBuff_InfinityArrow))
+        {
+            return true;
+        }
+
+        if ((iBuffSkill == AT_SKILL_SOUL_BARRIER || iBuffSkill == AT_SKILL_SOUL_BARRIER_STR || iBuffSkill == AT_SKILL_SOUL_BARRIER_PROFICIENCY)
+            && !g_isCharacterBuff((&pTargetChar->Object), eBuff_WizDefense))
+        {
+            return true;
+        }
+
+        if ((iBuffSkill == AT_SKILL_SWELL_LIFE || iBuffSkill == AT_SKILL_SWELL_LIFE_STR || iBuffSkill == AT_SKILL_SWELL_LIFE_PROFICIENCY)
+            && !g_isCharacterBuff((&pTargetChar->Object), eBuff_Life))
+        {
+            return true;
+        }
+
+        if ((iBuffSkill == AT_SKILL_EXPANSION_OF_WIZARDRY || iBuffSkill == AT_SKILL_EXPANSION_OF_WIZARDRY_STR || iBuffSkill == AT_SKILL_EXPANSION_OF_WIZARDRY_MASTERY)
+            && !g_isCharacterBuff((&pTargetChar->Object), eBuff_SwellOfMagicPower))
+        {
+            return true;
+        }
+
+        if ((iBuffSkill == AT_SKILL_ADD_CRITICAL || iBuffSkill == AT_SKILL_ADD_CRITICAL_STR1 || iBuffSkill == AT_SKILL_ADD_CRITICAL_STR2 || iBuffSkill == AT_SKILL_ADD_CRITICAL_STR3)
+            && !g_isCharacterBuff((&pTargetChar->Object), eBuff_AddCriticalDamage))
+        {
+            return true;
+        }
+
+        if ((iBuffSkill == AT_SKILL_ALICE_BERSERKER || iBuffSkill == AT_SKILL_ALICE_BERSERKER_STR)
+            && !g_isCharacterBuff((&pTargetChar->Object), eBuff_Berserker))
+        {
+            return true;
+        }
+
+        if (iBuffSkill == AT_SKILL_ALICE_THORNS
+            && !g_isCharacterBuff((&pTargetChar->Object), eBuff_Thorns))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
     int CMuHelper::Buff()
     {
         if (!HasAssignedBuffSkill())
@@ -390,29 +484,17 @@ namespace MUHelper
             return 1;
         }
 
+        ActionSkillType iCurrentBuff = (ActionSkillType)m_config.aiBuff[m_iCurrentBuffIndex];
+        
+        // Set timer flag if using interval-based casting
         if (m_config.bSupportParty && g_pPartyManager->IsPartyActive())
         {
-            PARTY_t* pMember = &Party[m_iCurrentBuffPartyIndex];
-            CHARACTER* pChar = g_pPartyManager->GetPartyMemberChar(pMember);
-
-            if (pChar != NULL
-                && pMember->Map == gMapManager.WorldActive
-                && ComputeDistanceFromTarget(pChar) <= MAX_ACTIONABLE_DISTANCE)
+            if (!m_config.bBuffDurationParty
+                && m_config.iBuffCastInterval != 0
+                && m_iSecondsElapsed % m_config.iBuffCastInterval == 0)
             {
-                if (!m_config.bBuffDurationParty
-                    && m_config.iBuffCastInterval != 0
-                    && m_iSecondsElapsed % m_config.iBuffCastInterval == 0)
-                {
-                    m_bTimerActivatedBuffOngoing = true;
-                }
-
-                if (!BuffTarget(pChar, (ActionSkillType)m_config.aiBuff[m_iCurrentBuffIndex]))
-                {
-                    return 0;
-                }
+                m_bTimerActivatedBuffOngoing = true;
             }
-
-            m_iCurrentBuffPartyIndex = (m_iCurrentBuffPartyIndex + 1) % (sizeof(Party) / sizeof(Party[0]));
         }
         else
         {
@@ -422,19 +504,123 @@ namespace MUHelper
             {
                 m_bTimerActivatedBuffOngoing = true;
             }
-
-            if (!BuffTarget(Hero, (ActionSkillType)m_config.aiBuff[m_iCurrentBuffIndex]))
-            {
-                return 0;
-            }
         }
 
-        if (m_iCurrentBuffPartyIndex == 0)
+        if (m_config.bSupportParty && g_pPartyManager->IsPartyActive())
         {
-            m_iCurrentBuffIndex = (m_iCurrentBuffIndex + 1) % m_config.aiBuff.size();
+            // Calculate max buff distance first
+            float fBuffSkillDistance = gSkillManager.GetSkillDistance(iCurrentBuff, Hero);
+            int iMaxBuffDistance = MAX_ACTIONABLE_DISTANCE;
+            int iSkillDistanceInt = (int)(fBuffSkillDistance + 2.0f);
+            if (iSkillDistanceInt > iMaxBuffDistance)
+            {
+                iMaxBuffDistance = iSkillDistanceInt;
+            }
 
-            // Reaching this branch means everyone's been buffed, 
-            // so we're resetting the timer activated buff flag
+            // Search through all visible characters to find party members who need buffs
+            // This ensures we find party members even if they just came into view
+            CHARACTER* pBestTarget = NULL;
+            int iBestDistance = iMaxBuffDistance + 1; // Start with value larger than max range
+
+            // First, search for party members who need the buff
+            for (int i = 0; i < MAX_CHARACTERS_CLIENT; i++)
+            {
+                CHARACTER* pChar = &CharactersClient[i];
+                if (!pChar || !pChar->Object.Live || pChar->Object.Type != MODEL_PLAYER || pChar == Hero)
+                {
+                    continue;
+                }
+
+                // Check if this is a party member
+                if (!g_pPartyManager->IsPartyMemberChar(pChar))
+                {
+                    continue;
+                }
+
+                // Check if they need this buff (or timer forces it)
+                if (!m_bTimerActivatedBuffOngoing && !NeedsBuff(pChar, iCurrentBuff))
+                {
+                    continue;
+                }
+
+                // Check distance
+                int iDistance = ComputeDistanceFromTarget(pChar);
+                if (iDistance > iMaxBuffDistance)
+                {
+                    continue;
+                }
+
+                // Found a party member who needs buffing - prioritize closest one
+                if (iDistance < iBestDistance)
+                {
+                    iBestDistance = iDistance;
+                    pBestTarget = pChar;
+                }
+            }
+
+            // If we found a party member who needs buffing, buff them first
+            if (pBestTarget != NULL)
+            {
+                int iBuffResult = BuffTarget(pBestTarget, iCurrentBuff);
+                if (iBuffResult == 0)
+                {
+                    return 0; // Movement needed
+                }
+
+                // Successfully buffed party member, advance index
+                m_iCurrentBuffIndex = (m_iCurrentBuffIndex + 1) % m_config.aiBuff.size();
+                if (m_iCurrentBuffIndex == 0)
+                {
+                    m_bTimerActivatedBuffOngoing = false;
+                }
+                return 1;
+            }
+
+            // No party members need buffing, check if hero needs it
+            if (m_bTimerActivatedBuffOngoing || NeedsBuff(Hero, iCurrentBuff))
+            {
+                if (!BuffTarget(Hero, iCurrentBuff))
+                {
+                    return 0;
+                }
+
+                // Advance buff index after buffing hero
+                m_iCurrentBuffIndex = (m_iCurrentBuffIndex + 1) % m_config.aiBuff.size();
+                if (m_iCurrentBuffIndex == 0)
+                {
+                    m_bTimerActivatedBuffOngoing = false;
+                }
+                return 1;
+            }
+
+            // No one needs buffing, but advance index anyway to keep cycling
+            m_iCurrentBuffIndex = (m_iCurrentBuffIndex + 1) % m_config.aiBuff.size();
+            if (m_iCurrentBuffIndex == 0)
+            {
+                m_bTimerActivatedBuffOngoing = false;
+            }
+        }
+        else
+        {
+            // Solo mode - only buff self
+            if (m_bTimerActivatedBuffOngoing || NeedsBuff(Hero, iCurrentBuff))
+            {
+                if (!BuffTarget(Hero, iCurrentBuff))
+                {
+                    return 0;
+                }
+
+                // Advance buff index after buffing self
+                m_iCurrentBuffIndex = (m_iCurrentBuffIndex + 1) % m_config.aiBuff.size();
+                if (m_iCurrentBuffIndex == 0)
+                {
+                    m_bTimerActivatedBuffOngoing = false;
+                }
+                return 1;
+            }
+
+            // Hero doesn't need buff, but advance index to keep cycling
+            m_iCurrentBuffIndex = (m_iCurrentBuffIndex + 1) % m_config.aiBuff.size();
             if (m_iCurrentBuffIndex == 0)
             {
                 m_bTimerActivatedBuffOngoing = false;
@@ -703,6 +889,24 @@ namespace MUHelper
             }
         }
 
+        // Verify current target is not a party member
+        if (m_iCurrentTarget != -1)
+        {
+            int iIndex = FindCharacterIndex(m_iCurrentTarget);
+            if (iIndex != MAX_CHARACTERS_CLIENT)
+            {
+                CHARACTER* pTarget = &CharactersClient[iIndex];
+                if (g_pPartyManager->IsPartyMemberChar(pTarget))
+                {
+                    // Current target is a party member, clear it
+                    DeleteTarget(m_iCurrentTarget);
+                    m_iCurrentTarget = -1;
+                    m_iComboState = 0;
+                    return 0; // Stop attacking, will try again next cycle
+                }
+            }
+        }
+
         if (m_config.bUseCombo)
         {
             return SimulateComboAttack();
@@ -861,55 +1065,203 @@ namespace MUHelper
                 return 0;
             }
 
+            // Check if target is self (for self-buffing)
+            bool bIsSelf = (pTarget == Hero);
+            
+            // Check if target is a party member (for party buffing)
+            bool bIsPartyMember = g_pPartyManager->IsPartyMemberChar(pTarget);
+
             g_MovementSkill.m_iTarget = SelectedCharacter;
 
             TargetX = (int)(pTarget->Object.Position[0] / TERRAIN_SCALE);
             TargetY = (int)(pTarget->Object.Position[1] / TERRAIN_SCALE);
 
-            PATH_t tempPath;
-            bool bHasPath = PathFinding2(Hero->PositionX, Hero->PositionY, TargetX, TargetY, &tempPath, m_iHuntingDistance + fSkillDistance);
-            bool bTargetNear = CheckTile(Hero, &Hero->Object, fSkillDistance);
-            bool bNoWall = CheckWall(Hero->PositionX, Hero->PositionY, TargetX, TargetY);
-
-            // target not reachable, ignore it
-            if (!bHasPath)
+            // For self-buffing, don't check distance or move - just cast
+            if (bIsSelf)
             {
-                DeleteTarget(iTarget);
-                return 0;
+                // Self-buffing: set target to current position and cast immediately
+                TargetX = Hero->PositionX;
+                TargetY = Hero->PositionY;
             }
-
-            // target is not near or the path is obstructed by a wall, move closer
-            if (!bTargetNear || !bNoWall)
+            else
             {
-                Hero->Path.Lock.lock();
+                // For party members or monsters, check if we need to move
+                // Calculate actual distance
+                int iDistance = ComputeDistanceFromTarget(pTarget);
+                int iMaxSkillRange = (int)(fSkillDistance + 1.0f); // Add small buffer
 
-                // Limit movement to 2 steps at a time
-                int pathNum = min(tempPath.PathNum, 2);
-                for (int i = 0; i < pathNum; i++)
+                // Only move if target is beyond skill range
+                if (iDistance > iMaxSkillRange)
                 {
-                    Hero->Path.PathX[i] = tempPath.PathX[i];
-                    Hero->Path.PathY[i] = tempPath.PathY[i];
+                    PATH_t tempPath;
+                    bool bHasPath = PathFinding2(Hero->PositionX, Hero->PositionY, TargetX, TargetY, &tempPath, m_iHuntingDistance + fSkillDistance);
+                    
+                    if (!bHasPath)
+                    {
+                        // Can't reach target
+                        if (!bIsPartyMember)
+                        {
+                            DeleteTarget(iTarget);
+                        }
+                        return 0;
+                    }
+
+                    // Move closer to target
+                    Hero->Path.Lock.lock();
+
+                    // Limit movement to 2 steps at a time
+                    int pathNum = min(tempPath.PathNum, 2);
+                    for (int i = 0; i < pathNum; i++)
+                    {
+                        Hero->Path.PathX[i] = tempPath.PathX[i];
+                        Hero->Path.PathY[i] = tempPath.PathY[i];
+                    }
+                    Hero->Path.PathNum = pathNum;
+                    Hero->Path.CurrentPath = 0;
+                    Hero->Path.CurrentPathFloat = 0;
+
+                    Hero->Path.Lock.unlock();
+
+                    SendMove(Hero, &Hero->Object);
+                    return 0;
                 }
-                Hero->Path.PathNum = pathNum;
-                Hero->Path.CurrentPath = 0;
-                Hero->Path.CurrentPathFloat = 0;
+                else
+                {
+                    // Target is in range, but check for walls for non-party members
+                    // For party members, we're more lenient - if they're in range, try to cast
+                    if (!bIsPartyMember)
+                    {
+                        bool bNoWall = CheckWall(Hero->PositionX, Hero->PositionY, TargetX, TargetY);
+                        if (!bNoWall)
+                        {
+                            // Wall in the way, try to move around it
+                            PATH_t tempPath;
+                            bool bHasPath = PathFinding2(Hero->PositionX, Hero->PositionY, TargetX, TargetY, &tempPath, m_iHuntingDistance + fSkillDistance);
+                            
+                            if (bHasPath)
+                            {
+                                Hero->Path.Lock.lock();
 
-                Hero->Path.Lock.unlock();
+                                int pathNum = min(tempPath.PathNum, 2);
+                                for (int i = 0; i < pathNum; i++)
+                                {
+                                    Hero->Path.PathX[i] = tempPath.PathX[i];
+                                    Hero->Path.PathY[i] = tempPath.PathY[i];
+                                }
+                                Hero->Path.PathNum = pathNum;
+                                Hero->Path.CurrentPath = 0;
+                                Hero->Path.CurrentPathFloat = 0;
 
-                SendMove(Hero, &Hero->Object);
-                return 0;
+                                Hero->Path.Lock.unlock();
+
+                                SendMove(Hero, &Hero->Object);
+                                return 0;
+                            }
+                        }
+                    }
+                }
             }
         }
         else
         {
             TargetX = Hero->PositionX;
             TargetY = Hero->PositionY;
+            // For non-target skills, ensure SelectedCharacter is invalid so CheckTarget doesn't interfere
+            SelectedCharacter = -1;
+        }
+
+        // Ensure SelectedCharacter is valid for target-based skills before ExecuteSkill
+        // This prevents CheckTarget from falling back to mouse position when window is out of focus
+        if (bTargetRequired && iTarget != -1)
+        {
+            // Verify SelectedCharacter is still valid (character might have been deleted)
+            if (SelectedCharacter >= 0 && SelectedCharacter < MAX_CHARACTERS_CLIENT)
+            {
+                CHARACTER* pVerifyTarget = &CharactersClient[SelectedCharacter];
+                if (!pVerifyTarget->Object.Live || pVerifyTarget->Dead > 0)
+                {
+                    // Target is invalid, try to find it again
+                    int iNewIndex = FindCharacterIndex(iTarget);
+                    if (iNewIndex != MAX_CHARACTERS_CLIENT)
+                    {
+                        SelectedCharacter = iNewIndex;
+                        // Update TargetX/TargetY to match current target position
+                        CHARACTER* pTarget = &CharactersClient[SelectedCharacter];
+                        TargetX = (int)(pTarget->Object.Position[0] / TERRAIN_SCALE);
+                        TargetY = (int)(pTarget->Object.Position[1] / TERRAIN_SCALE);
+                    }
+                    else
+                    {
+                        // Can't find target - it may have been deleted or disconnected
+                        SelectedCharacter = -1;
+                        // Only delete from target list if it's not a party member
+                        // (party members might temporarily be out of view)
+                        int iTempIndex = FindCharacterIndex(iTarget);
+                        if (iTempIndex == MAX_CHARACTERS_CLIENT)
+                        {
+                            // Target completely gone, delete it
+                            DeleteTarget(iTarget);
+                        }
+                        else
+                        {
+                            // Target exists but SelectedCharacter was invalid
+                            // Check if it's a party member - if not, delete from target list
+                            CHARACTER* pTempTarget = &CharactersClient[iTempIndex];
+                            if (!g_pPartyManager->IsPartyMemberChar(pTempTarget))
+                            {
+                                DeleteTarget(iTarget);
+                            }
+                        }
+                        return 0;
+                    }
+                }
+            }
+            else if (SelectedCharacter == MAX_CHARACTERS_CLIENT || SelectedCharacter < 0)
+            {
+                // SelectedCharacter is invalid, try to find it again
+                int iNewIndex = FindCharacterIndex(iTarget);
+                if (iNewIndex != MAX_CHARACTERS_CLIENT)
+                {
+                    SelectedCharacter = iNewIndex;
+                    // Update TargetX/TargetY to match current target position
+                    CHARACTER* pTarget = &CharactersClient[SelectedCharacter];
+                    TargetX = (int)(pTarget->Object.Position[0] / TERRAIN_SCALE);
+                    TargetY = (int)(pTarget->Object.Position[1] / TERRAIN_SCALE);
+                }
+                else
+                {
+                    // Can't find target - it may have been deleted or disconnected
+                    SelectedCharacter = -1;
+                    // Only delete from target list if it's not a party member
+                    // (party members might temporarily be out of view)
+                    int iTempIndex = FindCharacterIndex(iTarget);
+                    if (iTempIndex == MAX_CHARACTERS_CLIENT)
+                    {
+                        // Target completely gone, delete it
+                        DeleteTarget(iTarget);
+                    }
+                    else
+                    {
+                        // Target exists but SelectedCharacter was invalid
+                        // Check if it's a party member - if not, delete from target list
+                        CHARACTER* pTempTarget = &CharactersClient[iTempIndex];
+                        if (!g_pPartyManager->IsPartyMemberChar(pTempTarget))
+                        {
+                            DeleteTarget(iTarget);
+                        }
+                    }
+                    return 0;
+                }
+            }
         }
 
         int iSkillResult = ExecuteSkill(Hero, iSkill, fSkillDistance);
         if (iSkillResult == -1)
         {
-            DeleteTarget(iTarget);
+            if (iTarget != -1 && !g_pPartyManager->IsPartyMemberChar(&CharactersClient[FindCharacterIndex(iTarget)]))
+            {
+                DeleteTarget(iTarget);
+            }
         }
 
         return (int)(iSkillResult == 1);

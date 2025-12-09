@@ -4776,6 +4776,12 @@ bool CheckTarget(CHARACTER* c)
     }
     else
     {
+        // Don't use mouse position for movement if MU Helper is active
+        if (MUHelper::g_MuHelper.IsActive())
+        {
+            return false;
+        }
+        
         RenderTerrain(true);
         if (RenderTerrainTile(SelectXF, SelectYF, (int)SelectXF, (int)SelectYF, 1.f, 1, true))
         {
@@ -7496,19 +7502,26 @@ void MoveHero()
 
     if (!MouseOnWindow && false == g_pNewUISystem->CheckMouseUse())
     {
+        // Disable mouse movement if MU Helper is active
+        bool bHelperActive = MUHelper::g_MuHelper.IsActive();
+        
         bool Success = false;
         if (MouseUpdateTime >= MouseUpdateTimeMax)
         {
             if (!EnableFastInput)
             {
-                if (MouseLButtonPush)
+                // Don't allow mouse click movement if helper is active
+                if (!bHelperActive)
                 {
-                    MouseLButtonPush = false;
-                    Success = true;
-                }
-                if (MouseLButton)
-                {
-                    Success = true;
+                    if (MouseLButtonPush)
+                    {
+                        MouseLButtonPush = false;
+                        Success = true;
+                    }
+                    if (MouseLButton)
+                    {
+                        Success = true;
+                    }
                 }
 
                 if ((
@@ -7540,7 +7553,8 @@ void MoveHero()
                 }
             }
         }
-        if (g_iFollowCharacter >= 0 && g_iFollowCharacter < MAX_CHARACTERS_CLIENT)
+        // Disable follow character movement if helper is active
+        if (!bHelperActive && g_iFollowCharacter >= 0 && g_iFollowCharacter < MAX_CHARACTERS_CLIENT)
         {
             CHARACTER* followCharacter = &CharactersClient[g_iFollowCharacter];
             if (followCharacter->Object.Live == 0)
@@ -7726,7 +7740,7 @@ void MoveHero()
                     c->MovementType = MOVEMENT_MOVE;
                 }
             }
-            else if (HIBYTE(GetAsyncKeyState(VK_SHIFT)) != 128)
+            else if (HIBYTE(GetAsyncKeyState(VK_SHIFT)) != 128 && !bHelperActive)
             {
                 RenderTerrain(true);
                 bool Success = RenderTerrainTile(SelectXF, SelectYF, (int)SelectXF, (int)SelectYF, 1.f, 1, true);

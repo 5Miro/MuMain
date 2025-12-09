@@ -44,6 +44,7 @@ namespace MUHelper
 		void Work();
 		int ActivatePet();
 		int Buff();
+		bool NeedsBuff(CHARACTER* pTargetChar, ActionSkillType iBuffSkill);
 		int BuffTarget(CHARACTER* pTargetChar, ActionSkillType iBuffSkill);
 		int RecoverHealth();
 		int Heal();
